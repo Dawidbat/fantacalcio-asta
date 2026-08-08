@@ -1,0 +1,177 @@
+[
+  {
+    "name": "Di Gregorio",
+    "role": "P",
+    "team": "Juventus"
+  },
+  {
+    "name": "Sommer",
+    "role": "P",
+    "team": "Inter"
+  },
+  {
+    "name": "Carnesecchi",
+    "role": "P",
+    "team": "Atalanta"
+  },
+  {
+    "name": "Meret",
+    "role": "P",
+    "team": "Napoli"
+  },
+  {
+    "name": "Vicario",
+    "role": "P",
+    "team": "Tottenham"
+  },
+  {
+    "name": "Bastoni",
+    "role": "D",
+    "team": "Inter"
+  },
+  {
+    "name": "Bremer",
+    "role": "D",
+    "team": "Juventus"
+  },
+  {
+    "name": "Buongiorno",
+    "role": "D",
+    "team": "Napoli"
+  },
+  {
+    "name": "Dimarco",
+    "role": "D",
+    "team": "Inter"
+  },
+  {
+    "name": "Calafiori",
+    "role": "D",
+    "team": "Arsenal"
+  },
+  {
+    "name": "Gila",
+    "role": "D",
+    "team": "Lazio"
+  },
+  {
+    "name": "Bellanova",
+    "role": "D",
+    "team": "Atalanta"
+  },
+  {
+    "name": "Barella",
+    "role": "C",
+    "team": "Inter"
+  },
+  {
+    "name": "Calhanoglu",
+    "role": "C",
+    "team": "Inter"
+  },
+  {
+    "name": "Frattesi",
+    "role": "C",
+    "team": "Inter"
+  },
+  {
+    "name": "Pellegrini",
+    "role": "C",
+    "team": "Roma"
+  },
+  {
+    "name": "Koopmeiners",
+    "role": "C",
+    "team": "Juventus"
+  },
+  {
+    "name": "Ricci",
+    "role": "C",
+    "team": "Torino"
+  },
+  {
+    "name": "Fabbian",
+    "role": "C",
+    "team": "Bologna"
+  },
+  {
+    "name": "Orsolini",
+    "role": "C",
+    "team": "Bologna"
+  },
+  {
+    "name": "Pulisic",
+    "role": "C",
+    "team": "Milan"
+  },
+  {
+    "name": "Zaccagni",
+    "role": "C",
+    "team": "Lazio"
+  },
+  {
+    "name": "Mkhitaryan",
+    "role": "C",
+    "team": "Inter"
+  },
+  {
+    "name": "McTominay",
+    "role": "C",
+    "team": "Napoli"
+  },
+  {
+    "name": "Lautaro Martinez",
+    "role": "A",
+    "team": "Inter"
+  },
+  {
+    "name": "Thuram",
+    "role": "A",
+    "team": "Inter"
+  },
+  {
+    "name": "Vlahovic",
+    "role": "A",
+    "team": "Juventus"
+  },
+  {
+    "name": "Lukaku",
+    "role": "A",
+    "team": "Napoli"
+  },
+  {
+    "name": "Retegui",
+    "role": "A",
+    "team": "Atalanta"
+  },
+  {
+    "name": "Scamacca",
+    "role": "A",
+    "team": "Atalanta"
+  },
+  {
+    "name": "Lookman",
+    "role": "A",
+    "team": "Atalanta"
+  },
+  {
+    "name": "Dybala",
+    "role": "A",
+    "team": "Roma"
+  },
+  {
+    "name": "Kean",
+    "role": "A",
+    "team": "Fiorentina"
+  },
+  {
+    "name": "Gudmundsson",
+    "role": "A",
+    "team": "Fiorentina"
+  },
+  {
+    "name": "Castro",
+    "role": "A",
+    "team": "Bologna"
+  }
+]
