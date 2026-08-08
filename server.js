@@ -1,7 +1,7 @@
 
 const path=require("path"), fs=require("fs"), express=require("express"), http=require("http"), {Server}=require("socket.io");
 const app=express(), server=http.createServer(app), io=new Server(server), PORT=process.env.PORT||3000;
-app.use(express.static(path.join(__dirname,"public")));
+app.use(express.static(__dirname));
 const BASE=JSON.parse(fs.readFileSync(path.join(__dirname,"players.json"),"utf8"));
 const SAVE=path.join(__dirname,"rooms.json");
 const DEFAULT={budget:500,seconds:15,squad:{P:3,D:8,C:8,A:6},minPlayers:2};
