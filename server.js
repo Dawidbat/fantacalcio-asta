@@ -41,7 +41,8 @@ function start(r,id,pn){
  if(r.auction)return "C'è già un'asta in corso.";
  if(current(r)!==id)return "Non è il tuo turno.";
  const i=r.available.findIndex(p=>p.name===pn);if(i<0)return "Giocatore non disponibile.";
- r.auction={player:r.available[i],proposerId:id,currentBid:0,bidderId:null,bidderName:null,endsAt:Date.now()+r.settings.seconds*1000};
+ const proposer=user(r,id);if(proposer.budget<1)return "Budget insufficiente.";
+ r.auction={player:r.available[i],proposerId:id,currentBid:1,bidderId:id,bidderName:proposer.name,endsAt:Date.now()+r.settings.seconds*1000};
  log(r,`${user(r,id).name} propone ${pn}.`);emit(r);
 }
 function offer(r,id,inc){
