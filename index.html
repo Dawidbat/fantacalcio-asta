@@ -15,12 +15,19 @@
 <div class="filters" style="margin-top:12px"><input id="search" class="input search" placeholder="🔎 Cerca giocatore..." oninput="renderPlayers()"><button class="btn alt" onclick="role='ALL';renderPlayers()">Tutti</button><button class="btn alt" onclick="role='P';renderPlayers()">P</button><button class="btn alt" onclick="role='D';renderPlayers()">D</button><button class="btn alt" onclick="role='C';renderPlayers()">C</button><button class="btn alt" onclick="role='A';renderPlayers()">A</button></div><div id="players" class="players"></div></div>
 </main><aside><div class="glass card"><h2>👥 Partecipanti</h2><div id="users" class="users"></div></div><div class="glass card"><h2>📜 Cronologia</h2><div id="log" class="log"></div></div></aside></div></section></div><div id="toast" class="toast"></div>
 <script>
-const s=io();let S=null,me=null,role='ALL',th=null;const $=x=>document.getElementById(x);
-function create(){s.emit('createRoom',{name:$('name').value,budget:Number($('budget').value)||500})}function join(){s.emit('joinRoom',{name:$('name').value,code:$('code').value})}
+const SESSION_KEY='fantacalcio-asta-session';const $=x=>document.getElementById(x);
+function readSession(){try{const x=JSON.parse(localStorage.getItem(SESSION_KEY));return x?.roomCode&&x?.userId?x:null}catch{return null}}
+function saveSession(x){try{localStorage.setItem(SESSION_KEY,JSON.stringify(x))}catch{}}
+function newClientId(){return crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}`}
+const s=io({reconnection:true,reconnectionAttempts:Infinity,reconnectionDelay:1000,reconnectionDelayMax:5000});let S=null,session=readSession(),pending=null,me=session?.userId||null,role='ALL',th=null;
+function clientId(){return session?.userId||pending?.userId||newClientId()}
+function create(){const id=clientId();pending={userId:id};me=id;s.emit('createRoom',{name:$('name').value,budget:Number($('budget').value)||500,clientId:id})}function join(){const id=clientId();pending={userId:id};me=id;s.emit('joinRoom',{name:$('name').value,code:$('code').value,clientId:id})}
 $('createRoom').addEventListener('click',create);$('joinRoom').addEventListener('click',join);
 function start(){s.emit('start')}function bid(n){s.emit('bid',{increment:n})}function undo(){s.emit('undoSale')}
 function toast(t){$('toast').textContent=t;$('toast').style.display='block';setTimeout(()=>$('toast').style.display='none',2400)}
-s.on('connect',()=>me=s.id);s.on('errorMessage',toast);s.on('state',x=>{S=x; $('login').classList.add('hidden');$('app').classList.remove('hidden');render()});
+function restore(){if(session?.roomCode&&s.connected){me=session.userId;s.emit('rejoinRoom',{code:session.roomCode,clientId:session.userId})}}
+s.on('connect',restore);s.on('errorMessage',toast);s.on('state',x=>{S=x;if(me&&x.users.some(u=>u.id===me)){session={roomCode:x.code,userId:me};pending=null;saveSession(session)}$('login').classList.add('hidden');$('app').classList.remove('hidden');render()});
+window.addEventListener('pageshow',()=>{if(s.connected)restore();else s.connect()});window.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(s.connected)restore();else s.connect()}});
 function render(){const us=S.users,my=us.find(u=>u.id===me),cur=us[S.turnIndex%Math.max(us.length,1)];$('room').textContent=`${S.code} · ${S.settings.budget} CREDITI`;
 $('start').style.display=S.started?'none':'inline-block';$('undo').classList.toggle('hidden',!(S.adminId===me&&S.lastSale));$('turn').textContent=S.started?(S.auction?`Asta proposta da ${byId(S.auction.proposerId)?.name||'—'}`:`Tocca a ${cur?.name||'—'} proporre`):`In attesa di ${S.settings.minPlayers} partecipanti`;
 $('pname').textContent=S.auction?.player?.name||'Nessuna asta';$('offer').textContent=`${S.auction?.currentBid||0} crediti`; $('bidder').textContent=S.auction?.bidderName?`🏆 ${S.auction.bidderName}`:'Nessuna offerta';

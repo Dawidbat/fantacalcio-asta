@@ -11,7 +11,9 @@ function persist(){const out={};for(const [c,r] of rooms){out[c]={...r,users:Obj
 load();
 function code(){let c;do c=Math.random().toString(36).slice(2,7).toUpperCase();while(rooms.has(c));return c}
 function name(v){return String(v||"").trim().replace(/\s+/g," ").slice(0,24)}
+function clientId(v){return String(v||"").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,64)}
 function user(r,id){return r.users.get(id)}
+function attach(r,s,id){r.connected[id]=s.id;s.join(r.code);s.data.room=r.code;s.data.userId=id}
 function publicRoom(r){
  return {code:r.code,adminId:r.adminId,settings:r.settings,started:r.started,turnIndex:r.turnIndex,
   users:[...r.users.values()].map(u=>({id:u.id,name:u.name,budget:u.budget,team:u.team,connected:!!r.connected[u.id]})),
@@ -53,25 +55,27 @@ function offer(r,id,inc){
  log(r,`${u.name} offre ${amount} per ${a.player.name}.`);emit(r);
 }
 io.on("connection",s=>{
- s.on("createRoom",({name:n,budget})=>{
-  n=name(n);if(!n)return s.emit("errorMessage","Inserisci il nome.");
-  const c=code(),r={code:c,adminId:s.id,settings:{...DEFAULT,budget:Number(budget)>0?Number(budget):500},users:new Map(),connected:{},available:BASE.map(x=>({...x})),turnIndex:0,auction:null,started:false,log:[],lastSale:null};
-  r.users.set(s.id,{id:s.id,name:n,budget:r.settings.budget,team:[]});r.connected[s.id]=true;rooms.set(c,r);s.join(c);s.data.room=c;log(r,`👑 ${n} ha creato la lega.`);emit(r);
+ s.on("createRoom",({name:n,budget,clientId:id})=>{
+  n=name(n);id=clientId(id);if(!n)return s.emit("errorMessage","Inserisci il nome.");if(!id)return s.emit("errorMessage","Sessione non valida.");
+  const c=code(),r={code:c,adminId:id,settings:{...DEFAULT,budget:Number(budget)>0?Number(budget):500},users:new Map(),connected:{},available:BASE.map(x=>({...x})),turnIndex:0,auction:null,started:false,log:[],lastSale:null};
+  r.users.set(id,{id,name:n,budget:r.settings.budget,team:[]});rooms.set(c,r);attach(r,s,id);log(r,`👑 ${n} ha creato la lega.`);emit(r);
  });
- s.on("joinRoom",({code:c,name:n})=>{
-  c=String(c||"").toUpperCase().trim();n=name(n);const r=rooms.get(c);
+ s.on("joinRoom",({code:c,name:n,clientId:id})=>{
+  c=String(c||"").toUpperCase().trim();n=name(n);id=clientId(id);const r=rooms.get(c);
   if(!r)return s.emit("errorMessage","Codice stanza non trovato.");
-  if(!n)return s.emit("errorMessage","Inserisci il nome.");
+  if(!n)return s.emit("errorMessage","Inserisci il nome.");if(!id)return s.emit("errorMessage","Sessione non valida.");
+  if(r.users.has(id)){attach(r,s,id);return emit(r)}
   if(findUserByName(r,n))return s.emit("errorMessage","Nome già utilizzato.");
   if(r.started)return s.emit("errorMessage","L'asta è già iniziata.");
-  r.users.set(s.id,{id:s.id,name:n,budget:r.settings.budget,team:[]});r.connected[s.id]=true;s.join(c);s.data.room=c;log(r,`${n} è entrato nella lega.`);emit(r);
+  r.users.set(id,{id,name:n,budget:r.settings.budget,team:[]});attach(r,s,id);log(r,`${n} è entrato nella lega.`);emit(r);
  });
- s.on("start",()=>{const r=rooms.get(s.data.room);if(!r||r.adminId!==s.id)return;if(r.users.size<r.settings.minPlayers)return s.emit("errorMessage",`Servono almeno ${r.settings.minPlayers} partecipanti.`);r.started=true;log(r,"🚀 Asta iniziata.");emit(r)});
- s.on("propose",({playerName})=>{const r=rooms.get(s.data.room);if(r?.started){const e=start(r,s.id,playerName);if(e)s.emit("errorMessage",e)}});
- s.on("bid",({increment})=>{const r=rooms.get(s.data.room),n=Number(increment);if(r&&[1,2,5,10,15].includes(n)){const e=offer(r,s.id,n);if(e)s.emit("errorMessage",e)}});
- s.on("undoSale",()=>{const r=rooms.get(s.data.room);if(!r||r.adminId!==s.id||!r.lastSale)return;const sale=r.lastSale,u=findUserByName(r,sale.buyer),p=BASE.find(x=>x.name===sale.player);if(!u||!p)return;const ti=u.team.findIndex(x=>x.name===sale.player&&x.price===sale.price);if(ti>=0){u.team.splice(ti,1);u.budget+=sale.price;r.available.push({...p});log(r,`↩️ ${sale.player} è stato restituito a ${u.name}.`);r.lastSale=null;emit(r)}});
+ s.on("rejoinRoom",({code:c,clientId:id})=>{const r=rooms.get(String(c||"").toUpperCase().trim());id=clientId(id);if(!r||!r.users.has(id))return s.emit("errorMessage","Sessione stanza non trovata.");attach(r,s,id);emit(r)});
+ s.on("start",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(r.users.size<r.settings.minPlayers)return s.emit("errorMessage",`Servono almeno ${r.settings.minPlayers} partecipanti.`);r.started=true;log(r,"🚀 Asta iniziata.");emit(r)});
+ s.on("propose",({playerName})=>{const r=rooms.get(s.data.room),id=s.data.userId;if(r?.started&&id){const e=start(r,id,playerName);if(e)s.emit("errorMessage",e)}});
+ s.on("bid",({increment})=>{const r=rooms.get(s.data.room),id=s.data.userId,n=Number(increment);if(r&&id&&[1,2,5,10,15].includes(n)){const e=offer(r,id,n);if(e)s.emit("errorMessage",e)}});
+ s.on("undoSale",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id||!r.lastSale)return;const sale=r.lastSale,u=findUserByName(r,sale.buyer),p=BASE.find(x=>x.name===sale.player);if(!u||!p)return;const ti=u.team.findIndex(x=>x.name===sale.player&&x.price===sale.price);if(ti>=0){u.team.splice(ti,1);u.budget+=sale.price;r.available.push({...p});log(r,`↩️ ${sale.player} è stato restituito a ${u.name}.`);r.lastSale=null;emit(r)}});
  s.on("displayMode",()=>s.emit("displayState",publicRoom(rooms.get(s.data.room))));
- s.on("disconnect",()=>{const r=rooms.get(s.data.room);if(r){r.connected[s.id]=false;emit(r)}});
+ s.on("disconnect",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(r&&id&&r.connected[id]===s.id){r.connected[id]=false;emit(r)}});
 });
 setInterval(()=>{for(const r of rooms.values())if(r.auction&&Date.now()>=r.auction.endsAt)end(r)},200);
 server.listen(PORT,()=>console.log(`Fantacalcio: http://localhost:${PORT}`));
