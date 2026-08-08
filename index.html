@@ -30,8 +30,8 @@ $('log').innerHTML=S.log.slice().reverse().map(x=>`<div>${esc(x.text)}</div>`).j
 function byId(id){return S.users.find(x=>x.id===id)}
 function renderPlayers(){const q=$('search').value.toLowerCase(),cur=S.users[S.turnIndex%Math.max(S.users.length,1)],can=S.started&&!S.auction&&cur?.id===me;
 const arr=S.available.filter(p=>(role==='ALL'||p.role===role)&&p.name.toLowerCase().includes(q));$('count').textContent=`${arr.length} rimasti`;
-$('players').innerHTML=arr.map(p=>`<div class="player" data-player="${esc(p.name)}" style="cursor:${can?'pointer':'default'}"><strong>${esc(p.name)}</strong><small>${p.role} · ${esc(p.team)}</small></div>`).join('');
-if(can)$('players').querySelectorAll('[data-player]').forEach(card=>card.addEventListener('click',()=>propose(card.dataset.player)))}
+const players=$('players');players.innerHTML=arr.map(p=>`<div class="player" style="cursor:${can?'pointer':'default'}"><strong>${esc(p.name)}</strong><small>${p.role} · ${esc(p.team)}</small></div>`).join('');
+if(can)players.querySelectorAll('.player').forEach((card,index)=>card.addEventListener('click',()=>propose(arr[index].name)))}
 function propose(n){s.emit('propose',{playerName:n})}
 function timer(){clearInterval(th);if(!S.auction){$('timer').textContent=S.settings.seconds;return}const tick=()=>{const x=Math.max(0,(S.auction.endsAt-Date.now())/1000);$('timer').textContent=Math.ceil(x);$('timer').classList.toggle('hot',x<=5);if(x<=0)clearInterval(th)};tick();th=setInterval(tick,100)}
 function copyLink(){navigator.clipboard?.writeText(location.href).then(()=>toast('Link copiato'))}
