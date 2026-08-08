@@ -9,7 +9,7 @@
 <input id="name" class="input" placeholder="Nome utente" maxlength="24"><div style="height:9px"></div><input id="code" class="input" placeholder="Codice lega (se entri)"><div style="height:9px"></div>
 <input id="budget" class="input" type="number" min="1" value="500" placeholder="Budget iniziale"><div style="height:12px"></div><div class="row"><button id="createRoom" class="btn">Crea lega</button><button id="joinRoom" class="btn alt">Entra</button></div>
 <p class="muted" style="font-size:12px;margin-top:14px">Una volta pubblicato online, puoi condividere lo stesso link con tutti.</p></section>
-<section id="app" class="hidden"><div class="top"><div><div class="brand">⚽ Asta Live</div><span id="room" class="pill"></span></div><div class="row"><button id="copy" class="btn alt" onclick="copyLink()">🔗 Copia link</button><button id="start" class="btn green" onclick="start()">🚀 Inizia asta</button><button class="btn alt" onclick="openDisplay()">📺 TV</button></div></div>
+<section id="app" class="hidden"><div class="top"><div><div class="brand">⚽ Asta Live</div><span id="room" class="pill"></span></div><div class="row"><button id="copy" class="btn alt" onclick="copyLink()">🔗 Copia link</button><button id="start" class="btn green" onclick="start()">🚀 Inizia asta</button><button class="btn alt" onclick="openDisplay()">📺 TV</button><button id="leaveRoom" class="btn red">Esci</button></div></div>
 <div class="layout"><main>
 <div class="glass card auction"><span id="phase" class="pill"></span><div id="turn" class="turn"></div><div id="pname" class="playername">Pronto</div><div id="timer" class="timer">15</div><div id="offer" class="offer">0 crediti</div><div id="bidder" class="muted">Nessuna offerta</div><div class="bidgrid"><button class="btn bid" onclick="bid(1)">+1</button><button class="btn bid" onclick="bid(2)">+2</button><button class="btn bid" onclick="bid(5)">+5</button><button class="btn bid" onclick="bid(10)">+10</button><button class="btn bid" onclick="bid(15)">+15</button></div></div>
 <div class="glass card"><div class="row" style="justify-content:space-between;align-items:center"><div><h2 style="margin:0">Giocatori disponibili</h2><span class="muted" id="count"></span></div><button id="undo" class="btn red hidden" onclick="undo()">↩️ Annulla ultimo</button></div>
@@ -24,6 +24,8 @@ const s=io({reconnection:true,reconnectionAttempts:Infinity,reconnectionDelay:10
 function clientId(){return session?.userId||pending?.userId||newClientId()}
 function create(){const id=clientId();pending={userId:id};me=id;s.emit('createRoom',{name:$('name').value,budget:Number($('budget').value)||500,clientId:id})}function join(){const id=clientId();pending={userId:id};me=id;s.emit('joinRoom',{name:$('name').value,code:$('code').value,clientId:id})}
 $('createRoom').addEventListener('click',create);$('joinRoom').addEventListener('click',join);
+function exitRoom(){s.emit('leaveRoom');try{localStorage.removeItem(SESSION_KEY)}catch{}session=null;pending=null;me=null;S=null;$('app').classList.add('hidden');$('login').classList.remove('hidden')}
+$('leaveRoom').addEventListener('click',exitRoom);
 function start(){s.emit('start')}function bid(n){s.emit('bid',{increment:n})}function undo(){s.emit('undoSale')}
 function toast(t){$('toast').textContent=t;$('toast').style.display='block';setTimeout(()=>$('toast').style.display='none',2400)}
 function restore(){if(session?.roomCode&&s.connected){me=session.userId;s.emit('rejoinRoom',{code:session.roomCode,clientId:session.userId})}}

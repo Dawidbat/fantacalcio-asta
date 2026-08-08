@@ -82,6 +82,7 @@ io.on("connection",s=>{
   r.users.set(id,{id,name:n,budget:r.settings.budget,team:[]});attach(r,s,id);log(r,`${n} è entrato nella lega.`);emit(r);
  });
  s.on("rejoinRoom",({code:c,clientId:id})=>{const r=rooms.get(String(c||"").toUpperCase().trim());id=clientId(id);if(!r||!r.users.has(id))return s.emit("errorMessage","Sessione stanza non trovata.");attach(r,s,id);emit(r)});
+ s.on("leaveRoom",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||!id)return;r.connected[id]=false;s.leave(r.code);s.data.room=null;s.data.userId=null;emit(r)});
  s.on("start",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(r.users.size<r.settings.minPlayers)return s.emit("errorMessage",`Servono almeno ${r.settings.minPlayers} partecipanti.`);r.started=true;advancePhase(r);ensureCurrent(r);log(r,"🚀 Asta iniziata.");emit(r)});
  s.on("propose",({playerName})=>{const r=rooms.get(s.data.room),id=s.data.userId;if(r?.started&&id){const e=start(r,id,playerName);if(e)s.emit("errorMessage",e)}});
  s.on("bid",({increment})=>{const r=rooms.get(s.data.room),id=s.data.userId,n=Number(increment);if(r&&id&&[1,2,5,10,15].includes(n)){const e=offer(r,id,n);if(e)s.emit("errorMessage",e)}});
