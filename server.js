@@ -66,7 +66,8 @@ function offer(r,id,inc){
  const a=r.auction,u=user(r,id);if(!a||!u)return "Nessuna asta attiva.";
  if(Date.now()>=a.endsAt)return "Tempo scaduto.";
  if(!hasRoleSpace(r,u,a.player.role))return `Hai raggiunto il limite ${a.player.role}.`;
- const amount=a.currentBid+inc;if(amount>maxBid(r,u))return "Devi conservare almeno 1 credito per ogni giocatore mancante.";
+ const limit=maxBid(r,u);if(limit<=a.currentBid)return "Hai raggiunto la tua offerta massima per completare la rosa.";
+ const amount=Math.min(a.currentBid+inc,limit);
  a.currentBid=amount;a.bidderId=id;a.bidderName=u.name;a.endsAt=Date.now()+r.settings.seconds*1000;
  log(r,`${u.name} offre ${amount} per ${a.player.name}.`);emit(r);
 }
