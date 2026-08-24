@@ -21,7 +21,8 @@ function attach(r,s,id){const oldId=r.connected[id],old=oldId&&io.sockets?.socke
 function sendRecoveryCode(s,r,u){s.emit("recoveryCode",{roomCode:r.code,userId:u.id,code:formatRecoveryCode(u.recoveryCode)})}
 function phaseRole(r){return PHASES[r.phaseIndex]}
 function hasRoleSpace(r,u,role){return u.team.length<r.settings.maxPlayers&&u.team.filter(p=>p.role===role).length<r.settings.squad[role]}
-function canPropose(r,u){return hasRoleSpace(r,u,phaseRole(r))&&u.budget>=1}
+function maxBid(r,u){return u.budget-Math.max(0,r.settings.maxPlayers-u.team.length-1)}
+function canPropose(r,u){return hasRoleSpace(r,u,phaseRole(r))&&maxBid(r,u)>=1}
 function advancePhase(r){if(r.phaseDone)return;if(r.phaseIndex===PHASES.length-1){r.phaseDone=true;log(r,"✅ Asta completata.");return}r.phaseIndex++;ensureCurrent(r);log(r,`➡️ Fase ${phaseRole(r)} iniziata.`)}
 function ensureCurrent(r){const ids=[...r.users.keys()];for(let n=0;n<ids.length;n++){const i=(r.turnIndex+n)%ids.length;if(canPropose(r,r.users.get(ids[i]))){r.turnIndex=i;return}}}
 function nextTurn(r){r.turnIndex=(r.turnIndex+1)%Math.max(r.users.size,1);ensureCurrent(r)}
@@ -41,7 +42,7 @@ function end(r){
  if(w&&i>=0){
    const role=a.player.role;
    if(!hasRoleSpace(r,w,role)){ log(r,`Asta annullata: ${w.name} ha raggiunto il limite ${role}.`); }
-   else if(w.budget<a.currentBid){log(r,`Asta annullata: budget insufficiente.`);}
+   else if(a.currentBid>maxBid(r,w)){log(r,`Asta annullata: devi conservare i crediti per completare la rosa.`);}
    else{
      w.budget-=a.currentBid; w.team.push({...a.player,price:a.currentBid}); r.available.splice(i,1);
      r.lastSale={player:a.player.name,buyer:w.name,price:a.currentBid,at:Date.now()};
@@ -56,7 +57,7 @@ function start(r,id,pn){
  if(current(r)!==id)return "Non è il tuo turno.";
  const i=r.available.findIndex(p=>p.name===pn);if(i<0)return "Giocatore non disponibile.";
  if(r.available[i].role!==phaseRole(r))return `In questa fase puoi proporre solo giocatori ${phaseRole(r)}.`;
- const proposer=user(r,id);if(proposer.budget<1)return "Budget insufficiente.";
+ const proposer=user(r,id);if(maxBid(r,proposer)<1)return "Devi conservare almeno 1 credito per ogni giocatore mancante.";
  if(!hasRoleSpace(r,proposer,r.available[i].role))return `Hai raggiunto il limite ${r.available[i].role}.`;
  r.auction={player:r.available[i],proposerId:id,currentBid:1,bidderId:id,bidderName:proposer.name,endsAt:Date.now()+r.settings.seconds*1000};
  log(r,`${user(r,id).name} propone ${pn}.`);emit(r);
@@ -65,7 +66,7 @@ function offer(r,id,inc){
  const a=r.auction,u=user(r,id);if(!a||!u)return "Nessuna asta attiva.";
  if(Date.now()>=a.endsAt)return "Tempo scaduto.";
  if(!hasRoleSpace(r,u,a.player.role))return `Hai raggiunto il limite ${a.player.role}.`;
- const amount=a.currentBid+inc;if(amount>u.budget)return "Budget insufficiente.";
+ const amount=a.currentBid+inc;if(amount>maxBid(r,u))return "Devi conservare almeno 1 credito per ogni giocatore mancante.";
  a.currentBid=amount;a.bidderId=id;a.bidderName=u.name;a.endsAt=Date.now()+r.settings.seconds*1000;
  log(r,`${u.name} offre ${amount} per ${a.player.name}.`);emit(r);
 }
