@@ -7,7 +7,7 @@
 </style></head><body><div class="wrap">
 <section id="login" class="glass login"><div class="brand">⚽ Fantacalcio Asta Live</div><p class="muted">Crea una lega oppure entra con codice. Ogni partecipante usa il proprio nome.</p>
 <input id="name" class="input" placeholder="Nome utente" maxlength="24"><div style="height:9px"></div><input id="code" class="input" placeholder="Codice lega (se entri)"><div style="height:9px"></div>
-<input id="budget" class="input" type="number" min="1" value="500" placeholder="Budget iniziale"><div style="height:12px"></div><div class="row"><button id="createRoom" class="btn">Crea lega</button><button id="joinRoom" class="btn alt">Entra</button></div>
+<input id="budget" class="input" type="number" min="1" value="500" placeholder="Budget iniziale"><div style="height:12px"></div><div class="row"><button id="createRoom" class="btn" type="button">Crea lega</button><button id="joinRoom" class="btn alt" type="button">Entra</button></div>
 <p class="muted" style="font-size:12px;margin-top:14px">Una volta pubblicato online, puoi condividere lo stesso link con tutti.</p></section>
 <section id="app" class="hidden"><div class="top"><div><div class="brand">⚽ Asta Live</div><span id="room" class="pill"></span></div><div class="row"><button id="copy" class="btn alt" onclick="copyLink()">🔗 Copia link</button><button id="start" class="btn green" onclick="start()">🚀 Inizia asta</button><button class="btn alt" onclick="openDisplay()">📺 TV</button><button id="leaveRoom" class="btn red">Esci</button></div></div>
 <div class="layout"><main>
@@ -19,17 +19,19 @@
 const SESSION_KEY='fantacalcio-asta-session',ROLE_INFO={P:['🧤','Portieri'],D:['🛡️','Difensori'],C:['⚙️','Centrocampisti'],A:['⚽','Attaccanti']};const $=x=>document.getElementById(x);
 function readSession(){try{const x=JSON.parse(localStorage.getItem(SESSION_KEY));return x?.roomCode&&x?.userId?x:null}catch{return null}}
 function saveSession(x){try{localStorage.setItem(SESSION_KEY,JSON.stringify(x))}catch{}}
-function newClientId(){return crypto.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}`}
-const s=io({reconnection:true,reconnectionAttempts:Infinity,reconnectionDelay:1000,reconnectionDelayMax:5000});let S=null,session=readSession(),pending=null,me=session?.userId||null,role='ALL',th=null;
+function newClientId(){return globalThis.crypto?.randomUUID?.()||`${Date.now()}-${Math.random().toString(36).slice(2)}`}
+const s=io({reconnection:true,reconnectionAttempts:Infinity,reconnectionDelay:1000,reconnectionDelayMax:5000});let S=null,session=readSession(),pending=null,me=session?.userId||null,role='ALL',th=null,requesting=false;
 function clientId(){return session?.userId||pending?.userId||newClientId()}
-function create(){const id=clientId();pending={userId:id};me=id;s.emit('createRoom',{name:$('name').value,budget:Number($('budget').value)||500,clientId:id})}function join(){const id=clientId();pending={userId:id};me=id;s.emit('joinRoom',{name:$('name').value,code:$('code').value,clientId:id})}
+function setRequesting(v){requesting=v;$('createRoom').disabled=v;$('joinRoom').disabled=v}
+function send(event,payload){if(requesting)return;setRequesting(true);const emit=()=>s.emit(event,payload);if(s.connected)return emit();s.once('connect',emit);s.connect()}
+function create(){const id=clientId();pending={userId:id};me=id;send('createRoom',{name:$('name').value,budget:Number($('budget').value)||500,clientId:id})}function join(){const id=clientId();pending={userId:id};me=id;send('joinRoom',{name:$('name').value,code:$('code').value,clientId:id})}
 $('createRoom').addEventListener('click',create);$('joinRoom').addEventListener('click',join);
 function exitRoom(){s.emit('leaveRoom');try{localStorage.removeItem(SESSION_KEY)}catch{}session=null;pending=null;me=null;S=null;$('app').classList.add('hidden');$('login').classList.remove('hidden')}
 $('leaveRoom').addEventListener('click',exitRoom);
 function start(){s.emit('start')}function bid(n){s.emit('bid',{increment:n})}function undo(){s.emit('undoSale')}
 function toast(t){$('toast').textContent=t;$('toast').style.display='block';setTimeout(()=>$('toast').style.display='none',2400)}
 function restore(){if(session?.roomCode&&s.connected){me=session.userId;s.emit('rejoinRoom',{code:session.roomCode,clientId:session.userId})}}
-s.on('connect',restore);s.on('errorMessage',toast);s.on('state',x=>{S=x;if(me&&x.users.some(u=>u.id===me)){session={roomCode:x.code,userId:me};pending=null;saveSession(session)}$('login').classList.add('hidden');$('app').classList.remove('hidden');render()});
+s.on('connect',restore);s.on('connect_error',()=>{setRequesting(false);toast('Connessione al server non disponibile. Riprova.')});s.on('errorMessage',t=>{setRequesting(false);toast(t)});s.on('state',x=>{S=x;setRequesting(false);if(me&&x.users.some(u=>u.id===me)){session={roomCode:x.code,userId:me};pending=null;saveSession(session)}$('login').classList.add('hidden');$('app').classList.remove('hidden');render()});
 window.addEventListener('pageshow',()=>{if(s.connected)restore();else s.connect()});window.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(s.connected)restore();else s.connect()}});
 function render(){const us=S.users,my=us.find(u=>u.id===me),cur=us[S.turnIndex%Math.max(us.length,1)];$('room').textContent=`${S.code} · ${S.settings.budget} CREDITI`;$('phase').textContent=S.phaseDone?'ASTA COMPLETATA':`FASE: ${ROLE_INFO[S.phaseRole][1].toUpperCase()}`;
 $('start').style.display=S.started?'none':'inline-block';$('undo').classList.toggle('hidden',!(S.adminId===me&&S.lastSale));$('turn').textContent=S.phaseDone?'Asta completata':S.started?(S.auction?`Asta proposta da ${byId(S.auction.proposerId)?.name||'—'}`:`Tocca a ${cur?.name||'—'} proporre`):`In attesa di ${S.settings.minPlayers} partecipanti`;
