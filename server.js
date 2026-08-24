@@ -7,6 +7,7 @@ const SAVE=path.join(__dirname,"rooms.json");
 const ROSTER_TEMPLATE=path.join(__dirname,"templates","asta_fantacalcio_serie_a_una_colonna_hd.pdf");
 const DEFAULT={budget:500,seconds:7,squad:{P:3,D:8,C:8,A:7},maxPlayers:26,minPlayers:2};
 const PHASES=["P","D","C","A"];
+const ROLE_NAMES={P:"portieri",D:"difensori",C:"centrocampisti",A:"attaccanti"};
 const rooms=new Map();
 function load(){try{const x=JSON.parse(fs.readFileSync(SAVE));for(const [code,r] of Object.entries(x)){r.users=new Map(Object.entries(r.users||{}));for(const u of r.users.values())if(!u.recoveryCode)u.recoveryCode=newRecoveryCode(r);r.settings={...DEFAULT,...r.settings,seconds:7,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};rooms.set(code,r)}}catch{}}
 function persist(){const out={};for(const [c,r] of rooms){out[c]={...r,users:Object.fromEntries(r.users)}}fs.writeFileSync(SAVE,JSON.stringify(out,null,2))}
@@ -38,6 +39,7 @@ function log(r,t){r.log.push({text:t,at:Date.now()})}
 function current(r){const ids=[...r.users.keys()];return ids.length?ids[r.turnIndex%ids.length]:null}
 function findUserByName(r,n){return [...r.users.values()].find(u=>u.name.toLowerCase()===n.toLowerCase())}
 function isAuctionComplete(r){return r.users.size>0&&[...r.users.values()].every(u=>u.team.length>=r.settings.maxPlayers)}
+function isPhaseComplete(r){const role=phaseRole(r);return r.users.size>0&&[...r.users.values()].every(u=>u.team.filter(p=>p.role===role).length>=r.settings.squad[role])}
 function setField(form,key,value){form.getTextField(key).setText(value==null?"":String(value))}
 function fileName(v){return String(v).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9_-]+/g,"-").replace(/^-+|-+$/g,"")||"partecipante"}
 async function rosterPdf(r,u){
@@ -106,7 +108,7 @@ io.on("connection",s=>{
  s.on("recoverRoom",({code:c,recoveryCode:rc})=>{const r=rooms.get(String(c||"").toUpperCase().trim());rc=recoveryCode(rc);const u=r&&[...r.users.values()].find(x=>x.recoveryCode===rc);if(!u)return s.emit("errorMessage","Codice di recupero non valido.");attach(r,s,u.id);s.emit("recoveredSession",{roomCode:r.code,userId:u.id});sendRecoveryCode(s,r,u);emit(r)});
  s.on("leaveRoom",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||!id)return;r.connected[id]=false;s.leave(r.code);s.data.room=null;s.data.userId=null;emit(r,false)});
  s.on("start",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(r.users.size<r.settings.minPlayers)return s.emit("errorMessage",`Servono almeno ${r.settings.minPlayers} partecipanti.`);r.started=true;ensureCurrent(r);log(r,"🚀 Asta iniziata.");emit(r,false)});
- s.on("nextPhase",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(!r.started)return s.emit("errorMessage","Avvia prima l'asta.");if(r.auction)return s.emit("errorMessage","Attendi la fine dell'asta in corso.");if(r.phaseDone)return s.emit("errorMessage","L'asta è già terminata.");advancePhase(r);emit(r,false)});
+ s.on("nextPhase",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(!r.started)return s.emit("errorMessage","Avvia prima l'asta.");if(r.auction)return s.emit("errorMessage","Attendi la fine dell'asta in corso.");if(r.phaseDone)return s.emit("errorMessage","L'asta è già terminata.");if(!isPhaseComplete(r))return s.emit("errorMessage",`Ogni partecipante deve completare i ${ROLE_NAMES[phaseRole(r)]}.`);advancePhase(r);emit(r,false)});
  s.on("propose",({playerName})=>{const r=rooms.get(s.data.room),id=s.data.userId;if(r?.started&&id){const e=start(r,id,playerName);if(e)s.emit("errorMessage",e)}});
  s.on("bid",({increment})=>{const r=rooms.get(s.data.room),id=s.data.userId,n=Number(increment);if(r&&id&&[1,2,5,10,15].includes(n)){const e=offer(r,id,n);if(e)s.emit("errorMessage",e)}});
  s.on("undoSale",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id||!r.lastSale)return;const sale=r.lastSale,u=findUserByName(r,sale.buyer),p=BASE.find(x=>x.name===sale.player);if(!u||!p)return;const ti=u.team.findIndex(x=>x.name===sale.player&&x.price===sale.price);if(ti>=0){u.team.splice(ti,1);u.budget+=sale.price;r.available.push({...p});r.phaseIndex=Math.min(r.phaseIndex,PHASES.indexOf(p.role));r.phaseDone=false;log(r,`↩️ ${sale.player} è stato restituito a ${u.name}.`);r.lastSale=null;emit(r)}});
