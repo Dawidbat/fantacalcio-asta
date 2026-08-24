@@ -1,5 +1,5 @@
 
-const path=require("path"), fs=require("fs"), express=require("express"), http=require("http"), {Server}=require("socket.io");
+const path=require("path"), fs=require("fs"), crypto=require("crypto"), express=require("express"), http=require("http"), {Server}=require("socket.io");
 const app=express(), server=http.createServer(app), io=new Server(server), PORT=process.env.PORT||3000;
 app.use(express.static(__dirname));
 const BASE=JSON.parse(fs.readFileSync(path.join(__dirname,"players.json"),"utf8"));
@@ -7,14 +7,18 @@ const SAVE=path.join(__dirname,"rooms.json");
 const DEFAULT={budget:500,seconds:7,squad:{P:3,D:8,C:8,A:7},maxPlayers:26,minPlayers:2};
 const PHASES=["P","D","C","A"];
 const rooms=new Map();
-function load(){try{const x=JSON.parse(fs.readFileSync(SAVE));for(const [code,r] of Object.entries(x)){r.users=new Map(Object.entries(r.users||{}));r.settings={...DEFAULT,...r.settings,seconds:7,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};rooms.set(code,r)}}catch{}}
+function load(){try{const x=JSON.parse(fs.readFileSync(SAVE));for(const [code,r] of Object.entries(x)){r.users=new Map(Object.entries(r.users||{}));for(const u of r.users.values())if(!u.recoveryCode)u.recoveryCode=newRecoveryCode(r);r.settings={...DEFAULT,...r.settings,seconds:7,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};rooms.set(code,r)}}catch{}}
 function persist(){const out={};for(const [c,r] of rooms){out[c]={...r,users:Object.fromEntries(r.users)}}fs.writeFileSync(SAVE,JSON.stringify(out,null,2))}
 load();
 function code(){let c;do c=Math.random().toString(36).slice(2,7).toUpperCase();while(rooms.has(c));return c}
 function name(v){return String(v||"").trim().replace(/\s+/g," ").slice(0,24)}
 function clientId(v){return String(v||"").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,64)}
+function recoveryCode(v){return String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,12)}
+function formatRecoveryCode(v){return `${v.slice(0,4)}-${v.slice(4,8)}-${v.slice(8)}`}
+function newRecoveryCode(r){let c;do c=crypto.randomBytes(6).toString("hex").toUpperCase();while([...r.users.values()].some(u=>u.recoveryCode===c));return c}
 function user(r,id){return r.users.get(id)}
-function attach(r,s,id){r.connected[id]=s.id;s.join(r.code);s.data.room=r.code;s.data.userId=id}
+function attach(r,s,id){const oldId=r.connected[id],old=oldId&&io.sockets?.sockets?.get(oldId);if(old&&old.id!==s.id){old.leave(r.code);old.data.room=null;old.data.userId=null}r.connected[id]=s.id;s.join(r.code);s.data.room=r.code;s.data.userId=id}
+function sendRecoveryCode(s,r,u){s.emit("recoveryCode",{roomCode:r.code,userId:u.id,code:formatRecoveryCode(u.recoveryCode)})}
 function phaseRole(r){return PHASES[r.phaseIndex]}
 function hasRoleSpace(r,u,role){return u.team.length<r.settings.maxPlayers&&u.team.filter(p=>p.role===role).length<r.settings.squad[role]}
 function canPropose(r,u){return hasRoleSpace(r,u,phaseRole(r))&&u.budget>=1}
@@ -69,18 +73,19 @@ io.on("connection",s=>{
  s.on("createRoom",({name:n,budget,clientId:id})=>{
   n=name(n);id=clientId(id);if(!n)return s.emit("errorMessage","Inserisci il nome.");if(!id)return s.emit("errorMessage","Sessione non valida.");
   const c=code(),r={code:c,adminId:id,settings:{...DEFAULT,budget:Number(budget)>0?Number(budget):500},users:new Map(),connected:{},available:BASE.map(x=>({...x})),turnIndex:0,phaseIndex:0,phaseDone:false,auction:null,started:false,log:[],lastSale:null};
-  r.users.set(id,{id,name:n,budget:r.settings.budget,team:[]});rooms.set(c,r);attach(r,s,id);log(r,`👑 ${n} ha creato la lega.`);emit(r);
+  const u={id,name:n,budget:r.settings.budget,team:[],recoveryCode:newRecoveryCode(r)};r.users.set(id,u);rooms.set(c,r);attach(r,s,id);sendRecoveryCode(s,r,u);log(r,`👑 ${n} ha creato la lega.`);emit(r);
  });
  s.on("joinRoom",({code:c,name:n,clientId:id})=>{
   c=String(c||"").toUpperCase().trim();n=name(n);id=clientId(id);const r=rooms.get(c);
   if(!r)return s.emit("errorMessage","Codice stanza non trovato.");
   if(!n)return s.emit("errorMessage","Inserisci il nome.");if(!id)return s.emit("errorMessage","Sessione non valida.");
-  if(r.users.has(id)){attach(r,s,id);return emit(r)}
+  if(r.users.has(id)){const u=r.users.get(id);attach(r,s,id);sendRecoveryCode(s,r,u);return emit(r)}
   if(findUserByName(r,n))return s.emit("errorMessage","Nome già utilizzato.");
   if(r.started)return s.emit("errorMessage","L'asta è già iniziata.");
-  r.users.set(id,{id,name:n,budget:r.settings.budget,team:[]});attach(r,s,id);log(r,`${n} è entrato nella lega.`);emit(r);
+  const u={id,name:n,budget:r.settings.budget,team:[],recoveryCode:newRecoveryCode(r)};r.users.set(id,u);attach(r,s,id);sendRecoveryCode(s,r,u);log(r,`${n} è entrato nella lega.`);emit(r);
  });
- s.on("rejoinRoom",({code:c,clientId:id})=>{const r=rooms.get(String(c||"").toUpperCase().trim());id=clientId(id);if(!r||!r.users.has(id))return s.emit("errorMessage","Sessione stanza non trovata.");attach(r,s,id);emit(r)});
+ s.on("rejoinRoom",({code:c,clientId:id})=>{const r=rooms.get(String(c||"").toUpperCase().trim());id=clientId(id);if(!r||!r.users.has(id))return s.emit("errorMessage","Sessione stanza non trovata.");const u=r.users.get(id);attach(r,s,id);sendRecoveryCode(s,r,u);emit(r)});
+ s.on("recoverRoom",({code:c,recoveryCode:rc})=>{const r=rooms.get(String(c||"").toUpperCase().trim());rc=recoveryCode(rc);const u=r&&[...r.users.values()].find(x=>x.recoveryCode===rc);if(!u)return s.emit("errorMessage","Codice di recupero non valido.");attach(r,s,u.id);s.emit("recoveredSession",{roomCode:r.code,userId:u.id});sendRecoveryCode(s,r,u);emit(r)});
  s.on("leaveRoom",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||!id)return;r.connected[id]=false;s.leave(r.code);s.data.room=null;s.data.userId=null;emit(r)});
  s.on("start",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(r.users.size<r.settings.minPlayers)return s.emit("errorMessage",`Servono almeno ${r.settings.minPlayers} partecipanti.`);r.started=true;ensureCurrent(r);log(r,"🚀 Asta iniziata.");emit(r)});
  s.on("nextPhase",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(!r.started)return s.emit("errorMessage","Avvia prima l'asta.");if(r.auction)return s.emit("errorMessage","Attendi la fine dell'asta in corso.");if(r.phaseDone)return s.emit("errorMessage","L'asta è già terminata.");advancePhase(r);emit(r)});
