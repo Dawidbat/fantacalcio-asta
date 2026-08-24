@@ -6,7 +6,9 @@
     "start": "node server.js"
   },
   "dependencies": {
+    "archiver": "^8.0.0",
     "express": "^5.1.0",
+    "pdf-lib": "^1.17.1",
     "socket.io": "^4.8.1"
   }
 }

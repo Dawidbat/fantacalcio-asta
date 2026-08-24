@@ -1,9 +1,10 @@
 
-const path=require("path"), fs=require("fs"), crypto=require("crypto"), express=require("express"), http=require("http"), {Server}=require("socket.io");
+const path=require("path"), fs=require("fs"), crypto=require("crypto"), express=require("express"), http=require("http"), archiver=require("archiver"), {PDFDocument}=require("pdf-lib"), {Server}=require("socket.io");
 const app=express(), server=http.createServer(app), io=new Server(server), PORT=process.env.PORT||3000;
 app.use(express.static(__dirname));
 const BASE=JSON.parse(fs.readFileSync(path.join(__dirname,"players.json"),"utf8"));
 const SAVE=path.join(__dirname,"rooms.json");
+const ROSTER_TEMPLATE=path.join(__dirname,"templates","asta_fantacalcio_serie_a_una_colonna_hd.pdf");
 const DEFAULT={budget:500,seconds:7,squad:{P:3,D:8,C:8,A:7},maxPlayers:26,minPlayers:2};
 const PHASES=["P","D","C","A"];
 const rooms=new Map();
@@ -36,6 +37,20 @@ function emit(r,includeAvailable=true){io.to(r.code).emit("state",publicRoom(r,i
 function log(r,t){r.log.push({text:t,at:Date.now()})}
 function current(r){const ids=[...r.users.keys()];return ids.length?ids[r.turnIndex%ids.length]:null}
 function findUserByName(r,n){return [...r.users.values()].find(u=>u.name.toLowerCase()===n.toLowerCase())}
+function isAuctionComplete(r){return r.users.size>0&&[...r.users.values()].every(u=>u.team.length>=r.settings.maxPlayers)}
+function setField(form,key,value){form.getTextField(key).setText(value==null?"":String(value))}
+function fileName(v){return String(v).normalize("NFD").replace(/[\u0300-\u036f]/g,"").replace(/[^a-zA-Z0-9_-]+/g,"-").replace(/^-+|-+$/g,"")||"partecipante"}
+async function rosterPdf(r,u){
+ const pdf=await PDFDocument.load(fs.readFileSync(ROSTER_TEMPLATE)),form=pdf.getForm(),spent=u.team.reduce((n,p)=>n+p.price,0);
+ setField(form,"squadra_utente",u.name);setField(form,"manager",u.name);setField(form,"data_asta",new Date().toLocaleDateString("it-IT"));setField(form,"budget_iniziale",r.settings.budget);
+ for(const role of PHASES){const players=u.team.filter(p=>p.role===role),total=players.reduce((n,p)=>n+p.price,0);players.forEach((p,index)=>{const slot=String(index+1).padStart(2,"0");setField(form,`${role}_${slot}_nome`,p.name);setField(form,`${role}_${slot}_squadra`,p.team);setField(form,`${role}_${slot}_crediti`,p.price)});setField(form,`totale_${role}`,total)}
+ setField(form,"totale_crediti_spesi",spent);setField(form,"crediti_rimanenti",u.budget);form.flatten();return Buffer.from(await pdf.save());
+}
+app.get("/api/rooms/:code/rose.zip",async(req,res)=>{
+ const r=rooms.get(String(req.params.code||"").toUpperCase().trim()),id=clientId(req.query.userId);if(!r||r.adminId!==id)return res.status(403).send("Non sei autorizzato a scaricare i PDF.");if(!isAuctionComplete(r))return res.status(409).send("Le rose non sono ancora complete.");
+ res.status(200).set({"Content-Type":"application/zip","Content-Disposition":`attachment; filename="rose-${r.code}.zip"`});const zip=archiver("zip",{zlib:{level:9}});zip.on("error",()=>{if(!res.headersSent)res.status(500).end();else res.end()});zip.pipe(res);
+ try{for(const u of r.users.values())zip.append(await rosterPdf(r,u),{name:`rosa-${fileName(u.name)}.pdf`});await zip.finalize()}catch(e){if(!res.headersSent)res.status(500).send("Impossibile generare i PDF.");else res.end()}
+});
 function end(r){
  if(!r.auction)return;
  const a=r.auction,w=a.bidderId?r.users.get(a.bidderId):null;
