@@ -22,7 +22,7 @@ function advancePhase(r){if(r.phaseDone)return;if(r.phaseIndex===PHASES.length-1
 function ensureCurrent(r){const ids=[...r.users.keys()];for(let n=0;n<ids.length;n++){const i=(r.turnIndex+n)%ids.length;if(canPropose(r,r.users.get(ids[i]))){r.turnIndex=i;return}}}
 function nextTurn(r){r.turnIndex=(r.turnIndex+1)%Math.max(r.users.size,1);ensureCurrent(r)}
 function publicRoom(r){
- return {code:r.code,adminId:r.adminId,settings:r.settings,started:r.started,turnIndex:r.turnIndex,phaseRole:phaseRole(r),phaseDone:r.phaseDone,
+ return {code:r.code,serverNow:Date.now(),adminId:r.adminId,settings:r.settings,started:r.started,turnIndex:r.turnIndex,phaseRole:phaseRole(r),phaseDone:r.phaseDone,
   users:[...r.users.values()].map(u=>({id:u.id,name:u.name,budget:u.budget,team:u.team,connected:!!r.connected[u.id]})),
   available:r.available,auction:r.auction?{...r.auction}:null,log:r.log.slice(-35),lastSale:r.lastSale||null};
 }
