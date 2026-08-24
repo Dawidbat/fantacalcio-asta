@@ -4,10 +4,10 @@ const app=express(), server=http.createServer(app), io=new Server(server), PORT=
 app.use(express.static(__dirname));
 const BASE=JSON.parse(fs.readFileSync(path.join(__dirname,"players.json"),"utf8"));
 const SAVE=path.join(__dirname,"rooms.json");
-const DEFAULT={budget:500,seconds:15,squad:{P:3,D:8,C:8,A:7},maxPlayers:26,minPlayers:2};
+const DEFAULT={budget:500,seconds:7,squad:{P:3,D:8,C:8,A:7},maxPlayers:26,minPlayers:2};
 const PHASES=["P","D","C","A"];
 const rooms=new Map();
-function load(){try{const x=JSON.parse(fs.readFileSync(SAVE));for(const [code,r] of Object.entries(x)){r.users=new Map(Object.entries(r.users||{}));r.settings={...DEFAULT,...r.settings,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};rooms.set(code,r)}}catch{}}
+function load(){try{const x=JSON.parse(fs.readFileSync(SAVE));for(const [code,r] of Object.entries(x)){r.users=new Map(Object.entries(r.users||{}));r.settings={...DEFAULT,...r.settings,seconds:7,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};rooms.set(code,r)}}catch{}}
 function persist(){const out={};for(const [c,r] of rooms){out[c]={...r,users:Object.fromEntries(r.users)}}fs.writeFileSync(SAVE,JSON.stringify(out,null,2))}
 load();
 function code(){let c;do c=Math.random().toString(36).slice(2,7).toUpperCase();while(rooms.has(c));return c}
