@@ -9,7 +9,7 @@ const DEFAULT={budget:500,seconds:7,squad:{P:3,D:8,C:8,A:7},maxPlayers:26,minPla
 const PHASES=["P","D","C","A"];
 const ROLE_NAMES={P:"portieri",D:"difensori",C:"centrocampisti",A:"attaccanti"};
 const rooms=new Map();
-function load(){try{const x=JSON.parse(fs.readFileSync(SAVE));for(const [code,r] of Object.entries(x)){r.users=new Map(Object.entries(r.users||{}));for(const u of r.users.values())if(!u.recoveryCode)u.recoveryCode=newRecoveryCode(r);r.settings={...DEFAULT,...r.settings,seconds:7,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};rooms.set(code,r)}}catch{}}
+function load(){try{const x=JSON.parse(fs.readFileSync(SAVE));for(const [code,r] of Object.entries(x)){r.users=new Map(Object.entries(r.users||{}));for(const u of r.users.values())if(!u.recoveryCode)u.recoveryCode=newRecoveryCode(r);r.settings={...DEFAULT,...r.settings,seconds:7,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};r.salesHistory=Array.isArray(r.salesHistory)?r.salesHistory:(r.lastSale?[r.lastSale]:[]);r.lastSale=r.salesHistory.at(-1)||null;rooms.set(code,r)}}catch{}}
 function persist(){const out={};for(const [c,r] of rooms){out[c]={...r,users:Object.fromEntries(r.users)}}fs.writeFileSync(SAVE,JSON.stringify(out,null,2))}
 load();
 function code(){let c;do c=Math.random().toString(36).slice(2,7).toUpperCase();while(rooms.has(c));return c}
@@ -31,7 +31,7 @@ function nextTurn(r){r.turnIndex=(r.turnIndex+1)%Math.max(r.users.size,1);ensure
 function publicRoom(r,includeAvailable=true){
  const state={code:r.code,serverNow:Date.now(),adminId:r.adminId,settings:r.settings,started:r.started,turnIndex:r.turnIndex,phaseRole:phaseRole(r),phaseDone:r.phaseDone,
   users:[...r.users.values()].map(u=>({id:u.id,name:u.name,budget:u.budget,team:u.team,connected:!!r.connected[u.id]})),
-  auction:r.auction?{...r.auction}:null,log:r.log.slice(-35),lastSale:r.lastSale||null};
+  auction:r.auction?{...r.auction}:null,log:r.log.slice(-35),lastSale:r.lastSale||null,undoCount:r.salesHistory?.length||0};
  if(includeAvailable)state.available=r.available;return state;
 }
 function emit(r,includeAvailable=true){io.to(r.code).emit("state",publicRoom(r,includeAvailable));persist()}
@@ -63,7 +63,7 @@ function end(r){
    else if(a.currentBid>maxBid(r,w)){log(r,`Asta annullata: devi conservare i crediti per completare la rosa.`);}
    else{
      w.budget-=a.currentBid; w.team.push({...a.player,price:a.currentBid}); r.available.splice(i,1);
-     r.lastSale={player:a.player.name,buyer:w.name,price:a.currentBid,at:Date.now()};
+     r.lastSale={player:a.player.name,buyer:w.name,buyerId:w.id,price:a.currentBid,at:Date.now()};r.salesHistory.push(r.lastSale);
      log(r,`🏆 ${w.name} compra ${a.player.name} per ${a.currentBid}.`);
    }
  }else log(r,`Nessuna offerta per ${a.player.name}.`);
@@ -92,7 +92,7 @@ function offer(r,id,inc){
 io.on("connection",s=>{
  s.on("createRoom",({name:n,budget,clientId:id})=>{
   n=name(n);id=clientId(id);if(!n)return s.emit("errorMessage","Inserisci il nome.");if(!id)return s.emit("errorMessage","Sessione non valida.");
-  const c=code(),r={code:c,adminId:id,settings:{...DEFAULT,budget:Number(budget)>0?Number(budget):500},users:new Map(),connected:{},available:BASE.map(x=>({...x})),turnIndex:0,phaseIndex:0,phaseDone:false,auction:null,started:false,log:[],lastSale:null};
+  const c=code(),r={code:c,adminId:id,settings:{...DEFAULT,budget:Number(budget)>0?Number(budget):500},users:new Map(),connected:{},available:BASE.map(x=>({...x})),turnIndex:0,phaseIndex:0,phaseDone:false,auction:null,started:false,log:[],lastSale:null,salesHistory:[]};
   const u={id,name:n,budget:r.settings.budget,team:[],recoveryCode:newRecoveryCode(r)};r.users.set(id,u);rooms.set(c,r);attach(r,s,id);sendRecoveryCode(s,r,u);log(r,`👑 ${n} ha creato la lega.`);emit(r);
  });
  s.on("joinRoom",({code:c,name:n,clientId:id})=>{
@@ -111,7 +111,7 @@ io.on("connection",s=>{
  s.on("nextPhase",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(!r.started)return s.emit("errorMessage","Avvia prima l'asta.");if(r.auction)return s.emit("errorMessage","Attendi la fine dell'asta in corso.");if(r.phaseDone)return s.emit("errorMessage","L'asta è già terminata.");if(!isPhaseComplete(r))return s.emit("errorMessage",`Ogni partecipante deve completare i ${ROLE_NAMES[phaseRole(r)]}.`);advancePhase(r);emit(r,false)});
  s.on("propose",({playerName})=>{const r=rooms.get(s.data.room),id=s.data.userId;if(r?.started&&id){const e=start(r,id,playerName);if(e)s.emit("errorMessage",e)}});
  s.on("bid",({increment})=>{const r=rooms.get(s.data.room),id=s.data.userId,n=Number(increment);if(r&&id&&[1,2,5,10,15].includes(n)){const e=offer(r,id,n);if(e)s.emit("errorMessage",e)}});
- s.on("undoSale",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id||!r.lastSale)return;const sale=r.lastSale,u=findUserByName(r,sale.buyer),p=BASE.find(x=>x.name===sale.player);if(!u||!p)return;const ti=u.team.findIndex(x=>x.name===sale.player&&x.price===sale.price);if(ti>=0){u.team.splice(ti,1);u.budget+=sale.price;r.available.push({...p});r.phaseIndex=Math.min(r.phaseIndex,PHASES.indexOf(p.role));r.phaseDone=false;log(r,`↩️ ${sale.player} è stato restituito a ${u.name}.`);r.lastSale=null;emit(r)}});
+ s.on("undoSale",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id||!r.salesHistory?.length)return;const sale=r.salesHistory.at(-1),u=user(r,sale.buyerId)||findUserByName(r,sale.buyer),p=BASE.find(x=>x.name===sale.player);if(!u||!p)return;const ti=u.team.findIndex(x=>x.name===sale.player&&x.price===sale.price);if(ti>=0){r.salesHistory.pop();u.team.splice(ti,1);u.budget+=sale.price;r.available.push({...p});r.phaseIndex=Math.min(r.phaseIndex,PHASES.indexOf(p.role));r.phaseDone=false;log(r,`↩️ ${sale.player} è stato restituito a ${u.name}.`);r.lastSale=r.salesHistory.at(-1)||null;emit(r)}});
  s.on("displayMode",()=>s.emit("displayState",publicRoom(rooms.get(s.data.room))));
  s.on("disconnect",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(r&&id&&r.connected[id]===s.id){r.connected[id]=false;emit(r,false)}});
 });
