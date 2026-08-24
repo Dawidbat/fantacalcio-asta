@@ -26,12 +26,13 @@ function canPropose(r,u){return hasRoleSpace(r,u,phaseRole(r))&&maxBid(r,u)>=1}
 function advancePhase(r){if(r.phaseDone)return;if(r.phaseIndex===PHASES.length-1){r.phaseDone=true;log(r,"✅ Asta completata.");return}r.phaseIndex++;ensureCurrent(r);log(r,`➡️ Fase ${phaseRole(r)} iniziata.`)}
 function ensureCurrent(r){const ids=[...r.users.keys()];for(let n=0;n<ids.length;n++){const i=(r.turnIndex+n)%ids.length;if(canPropose(r,r.users.get(ids[i]))){r.turnIndex=i;return}}}
 function nextTurn(r){r.turnIndex=(r.turnIndex+1)%Math.max(r.users.size,1);ensureCurrent(r)}
-function publicRoom(r){
- return {code:r.code,serverNow:Date.now(),adminId:r.adminId,settings:r.settings,started:r.started,turnIndex:r.turnIndex,phaseRole:phaseRole(r),phaseDone:r.phaseDone,
+function publicRoom(r,includeAvailable=true){
+ const state={code:r.code,serverNow:Date.now(),adminId:r.adminId,settings:r.settings,started:r.started,turnIndex:r.turnIndex,phaseRole:phaseRole(r),phaseDone:r.phaseDone,
   users:[...r.users.values()].map(u=>({id:u.id,name:u.name,budget:u.budget,team:u.team,connected:!!r.connected[u.id]})),
-  available:r.available,auction:r.auction?{...r.auction}:null,log:r.log.slice(-35),lastSale:r.lastSale||null};
+  auction:r.auction?{...r.auction}:null,log:r.log.slice(-35),lastSale:r.lastSale||null};
+ if(includeAvailable)state.available=r.available;return state;
 }
-function emit(r){io.to(r.code).emit("state",publicRoom(r));persist()}
+function emit(r,includeAvailable=true){io.to(r.code).emit("state",publicRoom(r,includeAvailable));persist()}
 function log(r,t){r.log.push({text:t,at:Date.now()})}
 function current(r){const ids=[...r.users.keys()];return ids.length?ids[r.turnIndex%ids.length]:null}
 function findUserByName(r,n){return [...r.users.values()].find(u=>u.name.toLowerCase()===n.toLowerCase())}
@@ -60,7 +61,7 @@ function start(r,id,pn){
  const proposer=user(r,id);if(maxBid(r,proposer)<1)return "Devi conservare almeno 1 credito per ogni giocatore mancante.";
  if(!hasRoleSpace(r,proposer,r.available[i].role))return `Hai raggiunto il limite ${r.available[i].role}.`;
  r.auction={player:r.available[i],proposerId:id,currentBid:1,bidderId:id,bidderName:proposer.name,endsAt:Date.now()+r.settings.seconds*1000};
- log(r,`${user(r,id).name} propone ${pn}.`);emit(r);
+ log(r,`${user(r,id).name} propone ${pn}.`);emit(r,false);
 }
 function offer(r,id,inc){
  const a=r.auction,u=user(r,id);if(!a||!u)return "Nessuna asta attiva.";
@@ -69,7 +70,7 @@ function offer(r,id,inc){
  const limit=maxBid(r,u);if(limit<=a.currentBid)return "Hai raggiunto la tua offerta massima per completare la rosa.";
  const amount=Math.min(a.currentBid+inc,limit);
  a.currentBid=amount;a.bidderId=id;a.bidderName=u.name;a.endsAt=Date.now()+r.settings.seconds*1000;
- log(r,`${u.name} offre ${amount} per ${a.player.name}.`);emit(r);
+ log(r,`${u.name} offre ${amount} per ${a.player.name}.`);emit(r,false);
 }
 io.on("connection",s=>{
  s.on("createRoom",({name:n,budget,clientId:id})=>{
@@ -88,14 +89,14 @@ io.on("connection",s=>{
  });
  s.on("rejoinRoom",({code:c,clientId:id})=>{const r=rooms.get(String(c||"").toUpperCase().trim());id=clientId(id);if(!r||!r.users.has(id))return s.emit("errorMessage","Sessione stanza non trovata.");const u=r.users.get(id);attach(r,s,id);sendRecoveryCode(s,r,u);emit(r)});
  s.on("recoverRoom",({code:c,recoveryCode:rc})=>{const r=rooms.get(String(c||"").toUpperCase().trim());rc=recoveryCode(rc);const u=r&&[...r.users.values()].find(x=>x.recoveryCode===rc);if(!u)return s.emit("errorMessage","Codice di recupero non valido.");attach(r,s,u.id);s.emit("recoveredSession",{roomCode:r.code,userId:u.id});sendRecoveryCode(s,r,u);emit(r)});
- s.on("leaveRoom",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||!id)return;r.connected[id]=false;s.leave(r.code);s.data.room=null;s.data.userId=null;emit(r)});
- s.on("start",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(r.users.size<r.settings.minPlayers)return s.emit("errorMessage",`Servono almeno ${r.settings.minPlayers} partecipanti.`);r.started=true;ensureCurrent(r);log(r,"🚀 Asta iniziata.");emit(r)});
- s.on("nextPhase",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(!r.started)return s.emit("errorMessage","Avvia prima l'asta.");if(r.auction)return s.emit("errorMessage","Attendi la fine dell'asta in corso.");if(r.phaseDone)return s.emit("errorMessage","L'asta è già terminata.");advancePhase(r);emit(r)});
+ s.on("leaveRoom",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||!id)return;r.connected[id]=false;s.leave(r.code);s.data.room=null;s.data.userId=null;emit(r,false)});
+ s.on("start",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(r.users.size<r.settings.minPlayers)return s.emit("errorMessage",`Servono almeno ${r.settings.minPlayers} partecipanti.`);r.started=true;ensureCurrent(r);log(r,"🚀 Asta iniziata.");emit(r,false)});
+ s.on("nextPhase",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id)return;if(!r.started)return s.emit("errorMessage","Avvia prima l'asta.");if(r.auction)return s.emit("errorMessage","Attendi la fine dell'asta in corso.");if(r.phaseDone)return s.emit("errorMessage","L'asta è già terminata.");advancePhase(r);emit(r,false)});
  s.on("propose",({playerName})=>{const r=rooms.get(s.data.room),id=s.data.userId;if(r?.started&&id){const e=start(r,id,playerName);if(e)s.emit("errorMessage",e)}});
  s.on("bid",({increment})=>{const r=rooms.get(s.data.room),id=s.data.userId,n=Number(increment);if(r&&id&&[1,2,5,10,15].includes(n)){const e=offer(r,id,n);if(e)s.emit("errorMessage",e)}});
  s.on("undoSale",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(!r||r.adminId!==id||!r.lastSale)return;const sale=r.lastSale,u=findUserByName(r,sale.buyer),p=BASE.find(x=>x.name===sale.player);if(!u||!p)return;const ti=u.team.findIndex(x=>x.name===sale.player&&x.price===sale.price);if(ti>=0){u.team.splice(ti,1);u.budget+=sale.price;r.available.push({...p});r.phaseIndex=Math.min(r.phaseIndex,PHASES.indexOf(p.role));r.phaseDone=false;log(r,`↩️ ${sale.player} è stato restituito a ${u.name}.`);r.lastSale=null;emit(r)}});
  s.on("displayMode",()=>s.emit("displayState",publicRoom(rooms.get(s.data.room))));
- s.on("disconnect",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(r&&id&&r.connected[id]===s.id){r.connected[id]=false;emit(r)}});
+ s.on("disconnect",()=>{const r=rooms.get(s.data.room),id=s.data.userId;if(r&&id&&r.connected[id]===s.id){r.connected[id]=false;emit(r,false)}});
 });
 setInterval(()=>{for(const r of rooms.values())if(r.auction&&Date.now()>=r.auction.endsAt)end(r)},200);
 server.listen(PORT,()=>console.log(`Fantacalcio: http://localhost:${PORT}`));
