@@ -9,14 +9,14 @@ const DEFAULT={budget:500,seconds:7,squad:{P:3,D:8,C:8,A:7},maxPlayers:26,minPla
 const PHASES=["P","D","C","A"];
 const ROLE_NAMES={P:"portieri",D:"difensori",C:"centrocampisti",A:"attaccanti"};
 const rooms=new Map();
-function load(){try{const x=JSON.parse(fs.readFileSync(SAVE));for(const [code,r] of Object.entries(x)){r.users=new Map(Object.entries(r.users||{}));for(const u of r.users.values())if(!u.recoveryCode)u.recoveryCode=newRecoveryCode(r);r.turnOrder=turnOrder(r);r.settings={...DEFAULT,...r.settings,seconds:7,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};r.salesHistory=Array.isArray(r.salesHistory)?r.salesHistory:(r.lastSale?[r.lastSale]:[]);r.lastSale=r.salesHistory.at(-1)||null;rooms.set(code,r)}}catch{}}
+function load(){try{const x=JSON.parse(fs.readFileSync(SAVE));for(const r of Object.values(x)){r.users=new Map(Object.entries(r.users||{}));r.code=code();for(const u of r.users.values())u.recoveryCode=newRecoveryCode(r);r.turnOrder=turnOrder(r);r.settings={...DEFAULT,...r.settings,seconds:7,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};r.salesHistory=Array.isArray(r.salesHistory)?r.salesHistory:(r.lastSale?[r.lastSale]:[]);r.lastSale=r.salesHistory.at(-1)||null;rooms.set(r.code,r)}persist()}catch{}}
 function persist(){const out={};for(const [c,r] of rooms){out[c]={...r,users:Object.fromEntries(r.users)}}fs.writeFileSync(SAVE,JSON.stringify(out,null,2))}
 load();
 function code(){let c;do c=crypto.randomInt(0,10000).toString().padStart(4,"0");while(rooms.has(c));return c}
 function name(v){return String(v||"").trim().replace(/\s+/g," ").slice(0,24)}
 function clientId(v){return String(v||"").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,64)}
-function recoveryCode(v){const c=String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"");return /^\d{1,4}$/.test(c)?c:c.slice(0,12)}
-function formatRecoveryCode(v){return v.length===4?v:`${v.slice(0,4)}-${v.slice(4,8)}-${v.slice(8)}`}
+function recoveryCode(v){return String(v||"").replace(/\D/g,"").slice(0,4)}
+function formatRecoveryCode(v){return v}
 function newRecoveryCode(r){let c;do c=crypto.randomInt(0,10000).toString().padStart(4,"0");while([...r.users.values()].some(u=>u.recoveryCode===c));return c}
 function user(r,id){return r.users.get(id)}
 function turnOrder(r){const ids=[...r.users.keys()],saved=Array.isArray(r.turnOrder)?r.turnOrder:[];return [...saved.filter(id=>r.users.has(id)),...ids.filter(id=>!saved.includes(id))]}
