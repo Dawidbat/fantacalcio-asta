@@ -12,12 +12,12 @@ const rooms=new Map();
 function load(){try{const x=JSON.parse(fs.readFileSync(SAVE));for(const [code,r] of Object.entries(x)){r.users=new Map(Object.entries(r.users||{}));for(const u of r.users.values())if(!u.recoveryCode)u.recoveryCode=newRecoveryCode(r);r.turnOrder=turnOrder(r);r.settings={...DEFAULT,...r.settings,seconds:7,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};r.salesHistory=Array.isArray(r.salesHistory)?r.salesHistory:(r.lastSale?[r.lastSale]:[]);r.lastSale=r.salesHistory.at(-1)||null;rooms.set(code,r)}}catch{}}
 function persist(){const out={};for(const [c,r] of rooms){out[c]={...r,users:Object.fromEntries(r.users)}}fs.writeFileSync(SAVE,JSON.stringify(out,null,2))}
 load();
-function code(){let c;do c=Math.random().toString(36).slice(2,7).toUpperCase();while(rooms.has(c));return c}
+function code(){let c;do c=crypto.randomInt(0,10000).toString().padStart(4,"0");while(rooms.has(c));return c}
 function name(v){return String(v||"").trim().replace(/\s+/g," ").slice(0,24)}
 function clientId(v){return String(v||"").replace(/[^a-zA-Z0-9_-]/g,"").slice(0,64)}
-function recoveryCode(v){return String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"").slice(0,12)}
-function formatRecoveryCode(v){return `${v.slice(0,4)}-${v.slice(4,8)}-${v.slice(8)}`}
-function newRecoveryCode(r){let c;do c=crypto.randomBytes(6).toString("hex").toUpperCase();while([...r.users.values()].some(u=>u.recoveryCode===c));return c}
+function recoveryCode(v){const c=String(v||"").toUpperCase().replace(/[^A-Z0-9]/g,"");return /^\d{1,4}$/.test(c)?c:c.slice(0,12)}
+function formatRecoveryCode(v){return v.length===4?v:`${v.slice(0,4)}-${v.slice(4,8)}-${v.slice(8)}`}
+function newRecoveryCode(r){let c;do c=crypto.randomInt(0,10000).toString().padStart(4,"0");while([...r.users.values()].some(u=>u.recoveryCode===c));return c}
 function user(r,id){return r.users.get(id)}
 function turnOrder(r){const ids=[...r.users.keys()],saved=Array.isArray(r.turnOrder)?r.turnOrder:[];return [...saved.filter(id=>r.users.has(id)),...ids.filter(id=>!saved.includes(id))]}
 function attach(r,s,id){const oldId=r.connected[id],old=oldId&&io.sockets?.sockets?.get(oldId);if(old&&old.id!==s.id){old.leave(r.code);old.data.room=null;old.data.userId=null}r.connected[id]=s.id;s.join(r.code);s.data.room=r.code;s.data.userId=id}
