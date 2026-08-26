@@ -1,5 +1,5 @@
 
-const path=require("path"), fs=require("fs"), crypto=require("crypto"), express=require("express"), http=require("http"), archiver=require("archiver"), {PDFDocument}=require("pdf-lib"), {Server}=require("socket.io");
+const path=require("path"), fs=require("fs"), crypto=require("crypto"), express=require("express"), http=require("http"), {PassThrough}=require("stream"), {ZipArchive}=require("archiver"), {PDFDocument}=require("pdf-lib"), {Server}=require("socket.io");
 const app=express(), server=http.createServer(app), io=new Server(server), PORT=process.env.PORT||3000;
 app.use(express.static(__dirname));
 const BASE=JSON.parse(fs.readFileSync(path.join(__dirname,"players.json"),"utf8"));
@@ -50,9 +50,12 @@ async function rosterPdf(r,u){
  setField(form,"totale_crediti_spesi",spent);setField(form,"crediti_rimanenti",u.budget);form.flatten();return Buffer.from(await pdf.save());
 }
 app.get("/api/rooms/:code/rose.zip",async(req,res)=>{
- const r=rooms.get(String(req.params.code||"").toUpperCase().trim()),id=clientId(req.query.userId);if(!r||r.adminId!==id)return res.status(403).send("Non sei autorizzato a scaricare i PDF.");if(!isAuctionComplete(r))return res.status(409).send("Le rose non sono ancora complete.");
- res.status(200).set({"Content-Type":"application/zip","Content-Disposition":`attachment; filename="rose-${r.code}.zip"`});const zip=archiver("zip",{zlib:{level:9}});zip.on("error",()=>{if(!res.headersSent)res.status(500).end();else res.end()});zip.pipe(res);
- try{for(const u of r.users.values())zip.append(await rosterPdf(r,u),{name:`rosa-${fileName(u.name)}.pdf`});await zip.finalize()}catch(e){if(!res.headersSent)res.status(500).send("Impossibile generare i PDF.");else res.end()}
+ try{
+  const r=rooms.get(String(req.params.code||"").toUpperCase().trim()),id=clientId(req.query.userId);if(!r||r.adminId!==id)return res.status(403).send("Non sei autorizzato a scaricare i PDF.");if(!isAuctionComplete(r))return res.status(409).send("Le rose non sono ancora complete.");
+  const files=[];for(const u of r.users.values())files.push({name:`rosa-${fileName(u.name)}.pdf`,data:await rosterPdf(r,u)});
+  const output=new PassThrough(),chunks=[],zip=new ZipArchive({zlib:{level:9}}),done=new Promise((resolve,reject)=>{output.on("data",chunk=>chunks.push(chunk));output.on("end",resolve);output.on("error",reject);zip.on("error",reject)});zip.pipe(output);for(const file of files)zip.append(file.data,{name:file.name});await zip.finalize();await done;
+  res.status(200).set({"Content-Type":"application/zip","Content-Disposition":`attachment; filename="rose-${r.code}.zip"`}).send(Buffer.concat(chunks));
+ }catch(e){console.error("Errore generazione PDF:",e);res.status(500).type("text/plain").send("Impossibile generare i PDF. Controlla i log del server.")}
 });
 function end(r){
  if(!r.auction)return;
