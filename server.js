@@ -51,7 +51,7 @@ async function rosterPdf(r,u){
 }
 app.get("/api/rooms/:code/rose.zip",async(req,res)=>{
  try{
-  const r=rooms.get(String(req.params.code||"").toUpperCase().trim()),id=clientId(req.query.userId);if(!r||r.adminId!==id)return res.status(403).send("Non sei autorizzato a scaricare i PDF.");if(!isAuctionComplete(r))return res.status(409).send("Le rose non sono ancora complete.");
+  const r=rooms.get(String(req.params.code||"").toUpperCase().trim()),socket=io.sockets.sockets.get(String(req.query.socketId||""));if(!r||!socket||socket.data.room!==r.code||socket.data.userId!==r.adminId)return res.status(403).send("Non sei autorizzato a scaricare i PDF.");if(!isAuctionComplete(r))return res.status(409).send("Le rose non sono ancora complete.");
   const files=[];for(const u of r.users.values())files.push({name:`rosa-${fileName(u.name)}.pdf`,data:await rosterPdf(r,u)});
   const output=new PassThrough(),chunks=[],zip=new ZipArchive({zlib:{level:9}}),done=new Promise((resolve,reject)=>{output.on("data",chunk=>chunks.push(chunk));output.on("end",resolve);output.on("error",reject);zip.on("error",reject)});zip.pipe(output);for(const file of files)zip.append(file.data,{name:file.name});await zip.finalize();await done;
   res.status(200).set({"Content-Type":"application/zip","Content-Disposition":`attachment; filename="rose-${r.code}.zip"`}).send(Buffer.concat(chunks));
