@@ -3,14 +3,14 @@ const path=require("path"), fs=require("fs"), crypto=require("crypto"), express=
 const app=express(), server=http.createServer(app), io=new Server(server), PORT=process.env.PORT||3000;
 app.use(express.static(__dirname));
 const BASE=JSON.parse(fs.readFileSync(path.join(__dirname,"players.json"),"utf8"));
-const SAVE=path.join(__dirname,"rooms.json");
+const SAVE=path.join(process.env.RAILWAY_VOLUME_MOUNT_PATH||__dirname,"rooms.json");
 const ROSTER_TEMPLATE=path.join(__dirname,"templates","asta_fantacalcio_serie_a_una_colonna_hd.pdf");
 const DEFAULT={budget:500,seconds:7,squad:{P:3,D:8,C:8,A:7},maxPlayers:26,minPlayers:2};
 const PHASES=["P","D","C","A"];
 const ROLE_NAMES={P:"portieri",D:"difensori",C:"centrocampisti",A:"attaccanti"};
 const rooms=new Map();
-function load(){try{const x=JSON.parse(fs.readFileSync(SAVE));for(const r of Object.values(x)){r.users=new Map(Object.entries(r.users||{}));r.code=code();for(const u of r.users.values())u.recoveryCode=newRecoveryCode(r);r.turnOrder=turnOrder(r);r.settings={...DEFAULT,...r.settings,seconds:7,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};r.salesHistory=Array.isArray(r.salesHistory)?r.salesHistory:(r.lastSale?[r.lastSale]:[]);r.lastSale=r.salesHistory.at(-1)||null;rooms.set(r.code,r)}persist()}catch{}}
-function persist(){const out={};for(const [c,r] of rooms){out[c]={...r,users:Object.fromEntries(r.users)}}fs.writeFileSync(SAVE,JSON.stringify(out,null,2))}
+function load(){try{const x=JSON.parse(fs.readFileSync(SAVE,"utf8"));for(const [savedCode,r] of Object.entries(x)){r.users=new Map(Object.entries(r.users||{}));r.code=/^\d{4}$/.test(String(r.code||savedCode))?String(r.code||savedCode):code();const used=new Set();for(const u of r.users.values()){if(!/^\d{4}$/.test(String(u.recoveryCode))||used.has(u.recoveryCode))u.recoveryCode=newRecoveryCode(r);used.add(u.recoveryCode)}r.turnOrder=turnOrder(r);r.settings={...DEFAULT,...r.settings,seconds:7,squad:{...DEFAULT.squad,...r.settings?.squad,A:7}};r.phaseIndex=Number.isInteger(r.phaseIndex)?r.phaseIndex:0;r.phaseDone=!!r.phaseDone;r.auction=null;r.connected={};r.salesHistory=Array.isArray(r.salesHistory)?r.salesHistory:(r.lastSale?[r.lastSale]:[]);r.lastSale=r.salesHistory.at(-1)||null;rooms.set(r.code,r)}persist()}catch{}}
+function persist(){const out={};for(const [c,r] of rooms){out[c]={...r,users:Object.fromEntries(r.users)}}fs.mkdirSync(path.dirname(SAVE),{recursive:true});fs.writeFileSync(`${SAVE}.tmp`,JSON.stringify(out,null,2));fs.renameSync(`${SAVE}.tmp`,SAVE)}
 load();
 function code(){let c;do c=crypto.randomInt(0,10000).toString().padStart(4,"0");while(rooms.has(c));return c}
 function name(v){return String(v||"").trim().replace(/\s+/g," ").slice(0,24)}
